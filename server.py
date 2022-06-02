@@ -1,24 +1,36 @@
-import asyncio
-import random
 import websockets
+from websockets import WebSocketServerProtocol
+import logging
 
- 
-async def server(websocket, path):
-    try:
-        while True:
-            # Receive data from "the outside world"
-            message = await websocket.recv()
-            # Feed this data to the PUBLISH co-routine
-            await websocket.send(f"Ok... {message} {random.randint(0, 1000)}")
+logging.basicConfig(level=logging.INFO)
 
-    except websockets.exceptions.ConnectionClosed:
-        print('Connection Closed!')
- 
- 
-if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
-    start_server = websockets.serve(server, "localhost", 8200)
-    loop.run_until_complete(start_server)
-    loop.run_forever()
+class BaseServer:
+    clients = set()
+
+    async def register(self, ws:WebSocketServerProtocol)-> None:
+        self.clients.add(ws)
+        logging.info(f"{ws.remote_address} connects!")
+    
+    async def unregister(self, ws:WebSocketServerProtocol)-> None:
+        self.clients.remove(ws)
+        logging.info(f"{ws.remote_address} disconnects!")
+
+    async def send(self, ws:WebSocketServerProtocol, message):
+        if ws in self.clients:
+            await ws.send(message)
+    
+    async def ws_handler(self, ws:WebSocketServerProtocol)-> None:
+        await self.register(ws)
+        try:
+            await self.distribute(ws)
+        finally:
+            await self.unregister(ws)
+
+    async def distribute(self, ws:WebSocketServerProtocol)-> None:
+        try:
+            async for message in ws:
+                await self.send(ws, str(message))
+        except websockets.ConnectionClosed as e:
+            print(f'Terminated', e)
 
  
